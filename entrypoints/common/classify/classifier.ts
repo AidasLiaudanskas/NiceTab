@@ -117,6 +117,20 @@ async function classifyBatch(
   return results;
 }
 
+// 桥接服务是否在运行，用于判断能否自动分类
+export async function isBridgeUp(bridgeUrl?: string): Promise<boolean> {
+  const { bridgeUrl: configured } = await getClassifyConfig();
+  const url = (bridgeUrl || configured).replace(/\/$/, '');
+  try {
+    const res = await fetch(`${url}/health`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 对标签页分类，已缓存的会跳过。返回本次新增的分类结果。
  */

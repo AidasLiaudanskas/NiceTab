@@ -1,5 +1,5 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { theme, Button, Modal, Input, Progress, Spin, Tooltip, message } from 'antd';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { theme, Button, Modal, Input, Spin, Tooltip, message } from 'antd';
 import { ReloadOutlined, SettingOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { ThemeProvider } from 'styled-components';
 import { tabListUtils } from '~/entrypoints/common/storage';
@@ -8,7 +8,7 @@ import { GlobalContext } from '~/entrypoints/common/hooks/global';
 import { openAdminRoutePage } from '~/entrypoints/common/tabs';
 import { GlobalStyle } from '~/entrypoints/common/style/Common.styled';
 import { getFaviconByExtApi, initFaviconApiData } from '~/entrypoints/common/utils/favicon';
-import { CATEGORIES, UNCLASSIFIED_ID, categoryById } from '~/entrypoints/common/classify/taxonomy';
+import { UNCLASSIFIED_ID, categoryById } from '~/entrypoints/common/classify/taxonomy';
 import {
   DEFAULT_BRIDGE_URL,
   classifyCacheKey,
@@ -21,28 +21,18 @@ import {
 import {
   BridgeUnreachableError,
   classifyTabs,
+  isBridgeUp,
   type ClassifyProgress,
 } from '~/entrypoints/common/classify/classifier';
+
+import { StyledDashboard, StyledSection, StyledTabCard } from './App.styled';
+
+initFaviconApiData();
 
 // 启动桥接服务的命令，连不上时提示用户
 const BRIDGE_CMD = 'pnpm bridge';
 
-import { StyledDashboard, StyledCategoryCard, StyledTabRow } from './App.styled';
-
-initFaviconApiData();
-
-// 每张卡片最多展示的标签页数量
-const ROWS_PER_CARD = 8;
-
-type FlatTab = TabItem & { groupName: string };
-
-function hostOf(url?: string) {
-  try {
-    return new URL(url!).host.replace(/^www\./, '');
-  } catch {
-    return '';
-  }
-}
+type FlatTab = TabItem & { groupName: string; createdAt: number };
 
 export default function App() {
   const { token } = theme.useToken();
@@ -52,9 +42,13 @@ export default function App() {
   const [cache, setCache] = useState<ClassifyCache>({});
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<ClassifyProgress | null>(null);
+  const [status, setStatus] = useState('');
 
   const [bridgeModalOpen, setBridgeModalOpen] = useState(false);
   const [bridgeDraft, setBridgeDraft] = useState(DEFAULT_BRIDGE_URL);
+
+  // 自动分类每次打开页面只触发一次
+  const autoRunRef = useRef(false);
 
   const initData = useCallback(async () => {
     const [tagList, nextCache] = await Promise.all([
@@ -63,9 +57,13 @@ export default function App() {
     ]);
     const flat: FlatTab[] = [];
     tagList.forEach(tag =>
-      tag.groupList.forEach(group =>
-        group.tabList.forEach(tab => flat.push({ ...tab, groupName: group.groupName })),
-      ),
+      tag.groupList.forEach(group => {
+        // TabItem 本身没有时间戳，用所属标签组的创建时间排序
+        const createdAt = new Date(group.createTime).getTime() || 0;
+        group.tabList.forEach(tab =>
+          flat.push({ ...tab, groupName: group.groupName, createdAt }),
+        );
+      }),
     );
     setTabs(flat);
     setCache(nextCache);
@@ -82,27 +80,30 @@ export default function App() {
     };
   }, [initData]);
 
-  // 按分类聚合
-  const buckets = useMemo(() => {
+  // 按分类聚合，分类之间按最新标签页时间排序，分类内部按时间倒序
+  const sections = useMemo(() => {
     const map = new Map<string, FlatTab[]>();
     tabs.forEach(tab => {
       const id = lookupCategory(cache, tab.url);
       const list = map.get(id);
       list ? list.push(tab) : map.set(id, [tab]);
     });
-    const ordered = [...CATEGORIES.map(c => c.id), UNCLASSIFIED_ID]
-      .map(id => ({ category: categoryById(id), tabList: map.get(id) || [] }))
-      .filter(bucket => bucket.tabList.length > 0);
-    return ordered;
+    return [...map.entries()]
+      .map(([id, list]) => ({
+        category: categoryById(id),
+        tabList: [...list].sort((a, b) => b.createdAt - a.createdAt),
+        newest: list.reduce((max, t) => Math.max(max, t.createdAt), 0),
+      }))
+      .sort((a, b) => {
+        // 未分类的始终放最后
+        if (a.category.id === UNCLASSIFIED_ID) return 1;
+        if (b.category.id === UNCLASSIFIED_ID) return -1;
+        return b.newest - a.newest;
+      });
   }, [tabs, cache]);
 
-  const maxBucketSize = useMemo(
-    () => buckets.reduce((max, b) => Math.max(max, b.tabList.length), 0),
-    [buckets],
-  );
-
-  const unclassifiedCount = useMemo(
-    () => tabs.filter(tab => lookupCategory(cache, tab.url) === UNCLASSIFIED_ID).length,
+  const unclassified = useMemo(
+    () => tabs.filter(tab => lookupCategory(cache, tab.url) === UNCLASSIFIED_ID),
     [tabs, cache],
   );
 
@@ -112,31 +113,60 @@ export default function App() {
     setBridgeModalOpen(true);
   }, []);
 
-  const handleClassify = useCallback(async () => {
-    setProgress({ done: 0, total: 0 });
-    try {
-      const { classified, skipped } = await classifyTabs(tabs, setProgress);
-      await initData();
-      if (!classified && !skipped) message.info('Nothing to classify yet.');
-      else message.success(`Classified ${classified} tab(s).`);
-    } catch (err) {
-      if (err instanceof BridgeUnreachableError) {
-        message.warning(`Start the classify bridge first: ${BRIDGE_CMD}`);
-        openBridgeModal();
-      } else {
-        console.error('Classification failed:', err);
-        message.error(`Classification failed: ${(err as Error).message}`);
+  const runClassify = useCallback(
+    async (silent: boolean) => {
+      setProgress({ done: 0, total: 0 });
+      try {
+        const { classified } = await classifyTabs(tabs, setProgress);
+        await initData();
+        if (!silent && classified) message.success(`Classified ${classified} tab(s).`);
+        setStatus('');
+      } catch (err) {
+        if (err instanceof BridgeUnreachableError) {
+          setStatus(`Bridge offline — run \`${BRIDGE_CMD}\` to classify automatically.`);
+          if (!silent) {
+            message.warning(`Start the classify bridge first: ${BRIDGE_CMD}`);
+            openBridgeModal();
+          }
+        } else {
+          console.error('Classification failed:', err);
+          setStatus(`Classification failed: ${(err as Error).message}`);
+          if (!silent) message.error(`Classification failed: ${(err as Error).message}`);
+        }
+      } finally {
+        setProgress(null);
       }
-    } finally {
-      setProgress(null);
-    }
-  }, [tabs, initData, openBridgeModal]);
+    },
+    [tabs, initData, openBridgeModal],
+  );
+
+  // 打开页面后，桥接服务可用则自动分类
+  useEffect(() => {
+    if (loading || autoRunRef.current || !unclassified.length) return;
+    autoRunRef.current = true;
+    (async () => {
+      if (await isBridgeUp()) {
+        runClassify(true);
+      } else {
+        setStatus(`${unclassified.length} tabs not classified — run \`${BRIDGE_CMD}\` and reload.`);
+      }
+    })();
+  }, [loading, unclassified.length, runClassify]);
 
   const handleBridgeSave = useCallback(async () => {
     await setClassifyConfig({ bridgeUrl: bridgeDraft.trim() || DEFAULT_BRIDGE_URL });
     setBridgeModalOpen(false);
     message.success('Bridge address saved.');
   }, [bridgeDraft]);
+
+  const statusLine = () => {
+    if (progress) {
+      return progress.total
+        ? `Classifying… ${progress.done} / ${progress.total}`
+        : 'Classifying…';
+    }
+    return status;
+  };
 
   const body = () => {
     if (loading) {
@@ -151,7 +181,7 @@ export default function App() {
         <div className="dashboard-center">
           <p style={{ fontSize: 16, margin: 0 }}>Nothing saved yet.</p>
           <p style={{ opacity: 0.6, margin: 0 }}>
-            Send some tabs to NiceTab, then classify them here.
+            Press Alt+Shift+A to send this window's tabs here.
           </p>
           <Button type="primary" onClick={() => openAdminRoutePage({ path: '/home' })}>
             Open NiceTab
@@ -159,44 +189,30 @@ export default function App() {
         </div>
       );
     }
-    return (
-      <div className="dashboard-grid">
-        {buckets.map(({ category, tabList }) => (
-          <StyledCategoryCard key={category.id} $color={category.color}>
-            <div className="card-header">
-              <span className="card-name">{category.name}</span>
-              <span className="card-count">{tabList.length}</span>
-            </div>
-            <div className="card-bar">
-              <div
-                className="card-bar-fill"
-                style={{
-                  width: `${maxBucketSize ? (tabList.length / maxBucketSize) * 100 : 0}%`,
-                }}
-              />
-            </div>
-            <div className="card-list">
-              {tabList.slice(0, ROWS_PER_CARD).map(tab => (
-                <StyledTabRow
-                  key={tab.tabId}
-                  href={tab.url}
-                  title={`${tab.title}\n${tab.url}`}
-                >
-                  <img src={getFaviconByExtApi(tab.url || '')} alt="" />
-                  <span className="row-title">{tab.title || tab.url}</span>
-                  <span className="row-host">{hostOf(tab.url)}</span>
-                </StyledTabRow>
-              ))}
-              {tabList.length > ROWS_PER_CARD && (
-                <div className="card-more">
-                  + {tabList.length - ROWS_PER_CARD} more
-                </div>
-              )}
-            </div>
-          </StyledCategoryCard>
-        ))}
-      </div>
-    );
+    return sections.map(({ category, tabList }) => (
+      <StyledSection key={category.id} $color={category.color}>
+        <div className="section-header">
+          <span className="section-dot" />
+          <h2 className="section-name">{category.name}</h2>
+          <span className="section-count">
+            {tabList.length} tab{tabList.length === 1 ? '' : 's'}
+          </span>
+          <span className="section-rule" />
+        </div>
+        <div className="section-grid">
+          {tabList.map(tab => (
+            <StyledTabCard
+              key={tab.tabId}
+              href={tab.url}
+              title={`${tab.title || ''}\n${tab.url || ''}`}
+            >
+              <img src={getFaviconByExtApi(tab.url || '')} alt="" />
+              <span className="card-title">{tab.title || tab.url}</span>
+            </StyledTabCard>
+          ))}
+        </div>
+      </StyledSection>
+    ));
   };
 
   return (
@@ -205,26 +221,21 @@ export default function App() {
       <StyledDashboard>
         <div className="dashboard-header">
           <h1 className="dashboard-title">Outstanding work</h1>
+          <span className="dashboard-meta">
+            {sections.length} categor{sections.length === 1 ? 'y' : 'ies'} ·{' '}
+            {tabs.length} tab{tabs.length === 1 ? '' : 's'}
+          </span>
           <div className="dashboard-actions">
-            {progress && progress.total > 0 && (
-              <Progress
-                type="line"
-                style={{ width: 120, marginBottom: 0 }}
-                percent={Math.round((progress.done / progress.total) * 100)}
-                size="small"
-              />
-            )}
-            <Button
-              type="primary"
-              icon={<ReloadOutlined />}
-              loading={!!progress}
-              disabled={!unclassifiedCount}
-              onClick={handleClassify}
-            >
-              {unclassifiedCount
-                ? `Classify ${unclassifiedCount}`
-                : 'All classified'}
-            </Button>
+            <Tooltip title="Classify any new tabs">
+              <Button
+                icon={<ReloadOutlined />}
+                loading={!!progress}
+                disabled={!unclassified.length}
+                onClick={() => runClassify(false)}
+              >
+                {unclassified.length ? `Classify ${unclassified.length}` : 'All sorted'}
+              </Button>
+            </Tooltip>
             <Tooltip title="Classify bridge settings">
               <Button icon={<SettingOutlined />} onClick={openBridgeModal} />
             </Tooltip>
@@ -236,11 +247,7 @@ export default function App() {
             </Tooltip>
           </div>
         </div>
-        <div className="dashboard-summary">
-          {tabs.length} saved tab{tabs.length === 1 ? '' : 's'} across{' '}
-          {buckets.length} categor{buckets.length === 1 ? 'y' : 'ies'}
-          {unclassifiedCount ? ` · ${unclassifiedCount} not yet classified` : ''}
-        </div>
+        <div className="dashboard-status">{statusLine()}</div>
 
         {body()}
 
@@ -254,7 +261,8 @@ export default function App() {
           <p style={{ opacity: 0.7, fontSize: 13 }}>
             Classification runs through your local Claude Code CLI, so there is no API
             key and nothing leaves your machine except the tab titles. Start it from the
-            repo with <code>{BRIDGE_CMD}</code> and leave it running.
+            repo with <code>{BRIDGE_CMD}</code> and leave it running — the dashboard then
+            classifies new tabs on its own.
           </p>
           <Input
             value={bridgeDraft}

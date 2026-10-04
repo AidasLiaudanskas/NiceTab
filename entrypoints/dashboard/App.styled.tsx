@@ -2,20 +2,25 @@ import styled from 'styled-components';
 
 export const StyledDashboard = styled.div`
   min-height: 100vh;
-  padding: 24px 32px 48px;
+  padding: 28px 40px 64px;
   box-sizing: border-box;
-  color: ${props => props.theme.colorText || '#333'};
+  color: ${props => props.theme.colorText || '#1f1f1f'};
 
   .dashboard-header {
     display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 8px;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 4px;
   }
   .dashboard-title {
-    font-size: 22px;
+    font-size: 26px;
     font-weight: 600;
     margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .dashboard-meta {
+    font-size: 13px;
+    opacity: 0.5;
   }
   .dashboard-actions {
     margin-left: auto;
@@ -23,10 +28,11 @@ export const StyledDashboard = styled.div`
     align-items: center;
     gap: 8px;
   }
-  .dashboard-summary {
-    font-size: 13px;
-    opacity: 0.6;
-    margin-bottom: 24px;
+  .dashboard-status {
+    font-size: 12px;
+    opacity: 0.55;
+    margin-bottom: 28px;
+    min-height: 18px;
   }
   .dashboard-center {
     display: flex;
@@ -37,88 +43,80 @@ export const StyledDashboard = styled.div`
     min-height: 60vh;
     text-align: center;
   }
-  .dashboard-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 20px;
-    align-items: start;
-  }
 `;
 
-export const StyledCategoryCard = styled.div<{ $color: string }>`
-  border: 1px solid ${props => props.theme.colorBorderSecondary || '#eee'};
-  border-top: 3px solid ${props => props.$color};
-  border-radius: 8px;
-  background: ${props => props.theme.colorBgContainer || '#fff'};
-  overflow: hidden;
+export const StyledSection = styled.section<{ $color: string }>`
+  margin-bottom: 38px;
 
-  .card-header {
+  .section-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 12px 14px 10px;
+    gap: 10px;
+    margin-bottom: 14px;
   }
-  .card-name {
-    font-size: 15px;
-    font-weight: 600;
-    color: ${props => props.$color};
-  }
-  .card-count {
-    margin-left: auto;
-    font-size: 20px;
-    font-weight: 600;
-    line-height: 1;
-    color: ${props => props.$color};
-  }
-  .card-bar {
-    height: 4px;
-    background: ${props => props.theme.colorFillTertiary || '#f5f5f5'};
-  }
-  .card-bar-fill {
-    height: 100%;
+  .section-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
     background: ${props => props.$color};
-    opacity: 0.55;
+    flex-shrink: 0;
   }
-  .card-list {
-    padding: 6px 0 10px;
+  .section-name {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
   }
-  .card-more {
-    padding: 6px 14px 0;
-    font-size: 12px;
-    opacity: 0.55;
+  .section-count {
+    font-size: 13px;
+    opacity: 0.45;
+  }
+  .section-rule {
+    flex: 1;
+    height: 1px;
+    background: ${props => props.theme.colorBorderSecondary || '#ececec'};
+  }
+  .section-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(214px, 1fr));
+    gap: 12px;
   }
 `;
 
-export const StyledTabRow = styled.a`
+export const StyledTabCard = styled.a`
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  font-size: 13px;
-  line-height: 1.4;
+  align-items: flex-start;
+  gap: 9px;
+  min-height: 62px;
+  padding: 13px 14px;
+  border: 1px solid ${props => props.theme.colorBorderSecondary || '#ececec'};
+  border-radius: 10px;
+  background: ${props => props.theme.colorBgContainer || '#fff'};
   color: inherit;
   text-decoration: none;
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
 
   &:hover {
-    background: ${props => props.theme.colorFillQuaternary || '#fafafa'};
     color: inherit;
+    border-color: ${props => props.theme.colorPrimaryBorder || '#c9c9c9'};
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+    transform: translateY(-1px);
   }
 
   img {
     width: 16px;
     height: 16px;
+    margin-top: 1px;
     flex-shrink: 0;
     border-radius: 3px;
   }
-  .row-title {
+
+  .card-title {
+    font-size: 13px;
+    line-height: 1.38;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .row-host {
-    margin-left: auto;
-    flex-shrink: 0;
-    font-size: 11px;
-    opacity: 0.45;
+    word-break: break-word;
   }
 `;
