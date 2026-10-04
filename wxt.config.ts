@@ -13,6 +13,9 @@ export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   vite: () => ({
     plugins: [svgr({ svgrOptions: { icon: true } }), /* injectBgColorPlugin() */],
+    // 转义所有非 ASCII 字符。XML 解析器的字符区间里含有 U+FFFD、U+EFFFF 这类
+    // non-character，Chrome 的 IsStringUTF8() 会拒绝，导致扩展无法加载。
+    esbuild: { charset: 'ascii' },
   }),
   manifest: {
     name: 'Nice Tab Manager',
