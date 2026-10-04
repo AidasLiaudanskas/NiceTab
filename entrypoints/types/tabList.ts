@@ -5,6 +5,8 @@ export interface TabItem {
   title?: string;
   url?: string;
   favIconUrl?: string;
+  // 标签页自身的创建时间（从 Toby 等外部数据导入时保留），缺省时回退到所属标签组的时间
+  createdAt?: string;
 }
 // 标签组信息
 export interface GroupItem {

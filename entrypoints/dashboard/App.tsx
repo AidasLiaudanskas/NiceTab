@@ -32,7 +32,8 @@ initFaviconApiData();
 // 启动桥接服务的命令，连不上时提示用户
 const BRIDGE_CMD = 'pnpm bridge';
 
-type FlatTab = TabItem & { groupName: string; createdAt: number };
+// createdAt 在这里统一成时间戳，便于排序
+type FlatTab = Omit<TabItem, 'createdAt'> & { groupName: string; createdAt: number };
 
 export default function App() {
   const { token } = theme.useToken();
@@ -59,9 +60,14 @@ export default function App() {
     tagList.forEach(tag =>
       tag.groupList.forEach(group => {
         // TabItem 本身没有时间戳，用所属标签组的创建时间排序
-        const createdAt = new Date(group.createTime).getTime() || 0;
+        const groupTime = new Date(group.createTime).getTime() || 0;
         group.tabList.forEach(tab =>
-          flat.push({ ...tab, groupName: group.groupName, createdAt }),
+          flat.push({
+            ...tab,
+            groupName: group.groupName,
+            // 优先用标签页自己的时间，没有才用标签组的
+            createdAt: (tab.createdAt && new Date(tab.createdAt).getTime()) || groupTime,
+          }),
         );
       }),
     );
