@@ -28,6 +28,10 @@ export default defineConfig({
     optional_permissions: [
       ...(isFirefox ? ["tabGroups"] : []),
     ],
+    // 用分类仪表盘接管新标签页
+    chrome_url_overrides: {
+      newtab: 'dashboard.html',
+    },
     homepage_url: 'https://github.com/web-dahuyou/NiceTab',
     host_permissions: ['<all_urls>'],
     default_locale: 'zh_CN',
