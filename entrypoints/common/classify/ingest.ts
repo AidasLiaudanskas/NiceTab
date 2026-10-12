@@ -52,6 +52,44 @@ export interface IngestResult {
   items: IngestItem[];
 }
 
+// 手动入库时用户已经替模型做了判断，类型用 url 规则推即可，不必再问模型
+function inferKind(url: string): string {
+  if (/arxiv\.org|openreview|\.pdf($|\?)|dl\.acm\.org|ieeexplore/i.test(url)) return 'papers';
+  if (/x\.com|twitter\.com|reddit\.com|news\.ycombinator/i.test(url)) return 'posts';
+  if (/docs\.|developer\.|readthedocs|github\.com|\/docs?\//i.test(url)) return 'references';
+  return 'blogposts';
+}
+
+/**
+ * 手动把若干个标签页送进知识库，不调用模型，所以不花钱也没有延迟。
+ *
+ * 逐条点的时候会追加到当天同一个文件里，避免攒出几十个只有一行的文件。
+ */
+export async function ingestTabsDirectly(
+  tabs: IngestCandidate[],
+): Promise<IngestResult | undefined> {
+  if (!tabs.length) return undefined;
+  const { bridgeUrl } = await getClassifyConfig();
+  const items: IngestItem[] = tabs.map(tab => ({
+    tabId: tab.tabId,
+    title: tab.title,
+    url: tab.url,
+    saved: day(tab.createdAt),
+    kind: inferKind(tab.url || ''),
+  }));
+
+  const res = await fetch(`${bridgeUrl.replace(/\/$/, '')}/kb-ingest`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ items, append: true }),
+  }).catch(() => {
+    throw new BridgeUnreachableError(bridgeUrl);
+  });
+  const body = (await res.json()) as { file?: string; error?: string };
+  if (!res.ok) throw new Error(body.error || `bridge returned ${res.status}`);
+  return { file: body.file || '', items };
+}
+
 /** 纯确定性筛选，不花任何 token。 */
 export function collectIngestCandidates(tabs: IngestCandidate[]): IngestCandidate[] {
   const cutoff = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;

@@ -4,7 +4,7 @@
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -92,6 +92,13 @@ function send(res, status, body, origin) {
 const KB_INGEST_DIR =
   process.env.KB_INGEST_DIR || join(homedir(), 'kb', 'to-ingest');
 
+// 客户端请求有问题时回 400，而不是一律 500
+function badRequest(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+}
+
 function renderIngestMarkdown(items) {
   const today = new Date().toISOString().slice(0, 10);
   const groups = new Map();
@@ -112,8 +119,30 @@ function renderIngestMarkdown(items) {
   return `${md}\n---\n\n${items.length} items total.\n`;
 }
 
-async function writeIngestFile(items) {
+// 逐条入库时不该每点一次就生成一个文件，按天追加到同一个文件里
+function renderIngestLines(items) {
+  return items
+    .map(item => {
+      const title = String(item.title || item.url).replace(/[\[\]]/g, '');
+      const note = [item.kind, item.saved && `saved ${item.saved}`, item.why]
+        .filter(Boolean)
+        .join(' — ');
+      return `- [${title}](${item.url})${note ? `\n  - ${note}` : ''}\n`;
+    })
+    .join('');
+}
+
+async function writeIngestFile(items, append) {
   await mkdir(KB_INGEST_DIR, { recursive: true });
+  if (append) {
+    const day = new Date().toISOString().slice(0, 10);
+    const file = join(KB_INGEST_DIR, `tabs-${day}.md`);
+    const header = existsSync(file)
+      ? ''
+      : `# Readings sent from saved tabs — ${day}\n\n`;
+    await appendFile(file, header + renderIngestLines(items), 'utf8');
+    return file;
+  }
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const file = join(KB_INGEST_DIR, `tabs-${stamp}.md`);
   await writeFile(file, renderIngestMarkdown(items), 'utf8');
@@ -144,20 +173,21 @@ const server = createServer((req, res) => {
       const body = JSON.parse(raw);
       if (route === '/kb-ingest') {
         const items = Array.isArray(body.items) ? body.items : [];
-        if (!items.length) throw new Error('items is required');
-        if (items.some(item => !item?.url)) throw new Error('every item needs a url');
-        const file = await writeIngestFile(items);
+        if (!items.length) throw badRequest('items is required');
+        if (items.some(item => !item?.url)) throw badRequest('every item needs a url');
+        const file = await writeIngestFile(items, body.append === true);
         console.log(`[bridge] kb-ingest · ${items.length} items -> ${file}`);
         return send(res, 200, { file, count: items.length }, origin);
       }
       const { system, prompt } = body;
-      if (!system || !prompt) throw new Error('system and prompt are required');
+      if (!system || !prompt) throw badRequest('system and prompt are required');
       const out = await runClaude(system, prompt);
       console.log(`[bridge] ok · $${(out.costUsd ?? 0).toFixed(4)}`);
       send(res, 200, out, origin);
     } catch (err) {
       console.error('[bridge] failed:', err.message);
-      send(res, 500, { error: err.message }, origin);
+      // 请求本身的问题是 400，不是服务端挂了
+      send(res, err.status || 500, { error: err.message }, origin);
     }
   });
 });

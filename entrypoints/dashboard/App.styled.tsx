@@ -116,11 +116,17 @@ export const StyledTabCard = styled.a`
     transform: translateY(-1px);
   }
 
-  /* 删除按钮平时隐藏，悬停在卡片上或自身获得焦点时才出现 */
-  .card-close {
+  /* 操作按钮平时隐藏，悬停在卡片上或自身获得焦点时才出现 */
+  .card-actions {
     position: absolute;
     top: 4px;
     right: 4px;
+    display: flex;
+    gap: 2px;
+  }
+
+  .card-close,
+  .card-ingest {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -139,7 +145,9 @@ export const StyledTabCard = styled.a`
   }
 
   &:hover .card-close,
-  .card-close:focus-visible {
+  &:hover .card-ingest,
+  .card-close:focus-visible,
+  .card-ingest:focus-visible {
     opacity: 1;
   }
 
@@ -148,9 +156,14 @@ export const StyledTabCard = styled.a`
     color: ${props => props.theme.colorError || '#cf1322'};
   }
 
-  /* 给标题留出删除按钮的位置，避免文字被盖住 */
+  .card-ingest:hover {
+    background: ${props => props.theme.colorPrimaryBg || '#e6f4ff'};
+    color: ${props => props.theme.colorPrimary || '#1677ff'};
+  }
+
+  /* 给操作按钮留出位置，避免文字被盖住 */
   &:hover .card-title {
-    padding-right: 16px;
+    padding-right: 38px;
   }
 
   img {

@@ -53,6 +53,7 @@ import { getUsageStats, type UsageStats } from '~/entrypoints/common/utils/usage
 import {
   collectIngestCandidates,
   ingestStaleReadings,
+  ingestTabsDirectly,
   type IngestCandidate,
 } from '~/entrypoints/common/classify/ingest';
 
@@ -443,6 +444,67 @@ export default function App() {
     }
   }, [ingestCandidates, tabs, dismissTabs]);
 
+  // 逐条入库。用户自己点的，不需要模型再判断一次，所以这条路径不花钱。
+  const ingestTab = useCallback(
+    async (tab: FlatTab) => {
+      try {
+        const result = await ingestTabsDirectly([
+          {
+            tabId: tab.tabId,
+            title: tab.title,
+            url: tab.url,
+            categoryId: lookupCategory(cache, tab.url),
+            createdAt: tab.createdAt,
+          },
+        ]);
+        if (!result) return;
+        setStatus(`Sent to the knowledge base → ${result.file}`);
+        dismissTabs([tab], 'Sent to the knowledge base');
+      } catch (err) {
+        if (err instanceof BridgeUnreachableError) {
+          message.warning(`Start the classify bridge first: ${BRIDGE_CMD}`);
+        } else {
+          console.error('Ingest failed:', err);
+          message.error(`Ingest failed: ${(err as Error).message}`);
+        }
+      }
+    },
+    [cache, dismissTabs],
+  );
+
+  // 两个卡片渲染处共用，避免按钮逻辑写两遍
+  const cardActions = (tab: FlatTab) => (
+    <span className="card-actions">
+      <button
+        type="button"
+        className="card-ingest"
+        aria-label="Send to knowledge base"
+        title="Send to knowledge base and remove"
+        onClick={e => {
+          // 卡片本身是链接，别让按钮把页面打开
+          e.preventDefault();
+          e.stopPropagation();
+          ingestTab(tab);
+        }}
+      >
+        <BookOutlined />
+      </button>
+      <button
+        type="button"
+        className="card-close"
+        aria-label="Remove tab"
+        title="Remove tab"
+        onClick={e => {
+          e.preventDefault();
+          e.stopPropagation();
+          dismissTab(tab);
+        }}
+      >
+        <CloseOutlined />
+      </button>
+    </span>
+  );
+
   const statusLine = () => {
     if (progress) {
       return progress.total
@@ -501,19 +563,7 @@ export default function App() {
                       <span className="card-reason">{pick.reason}</span>
                     ) : null}
                   </span>
-                  <button
-                    type="button"
-                    className="card-close"
-                    aria-label="Remove tab"
-                    title="Remove tab"
-                    onClick={e => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      dismissTab(tab);
-                    }}
-                  >
-                    <CloseOutlined />
-                  </button>
+                  {cardActions(tab)}
                 </StyledTabCard>
               ))}
             </div>
@@ -568,20 +618,7 @@ export default function App() {
             >
               <img src={getFaviconByExtApi(tab.url || '')} alt="" />
               <span className="card-title">{tab.title || tab.url}</span>
-              <button
-                type="button"
-                className="card-close"
-                aria-label="Remove tab"
-                title="Remove tab"
-                onClick={e => {
-                  // 卡片本身是链接，别让删除按钮把页面打开
-                  e.preventDefault();
-                  e.stopPropagation();
-                  dismissTab(tab);
-                }}
-              >
-                <CloseOutlined />
-              </button>
+              {cardActions(tab)}
             </StyledTabCard>
           ))}
         </div>
