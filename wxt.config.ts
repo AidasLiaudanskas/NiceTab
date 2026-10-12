@@ -29,6 +29,8 @@ export default defineConfig({
       'unlimitedStorage',
       'alarms',
       'scripting',
+      // 顶部那一行使用统计要读浏览历史
+      'history',
       ...(isFirefox ? [] : ['tabGroups', 'commands', 'favicon']),
     ],
     optional_permissions: [
