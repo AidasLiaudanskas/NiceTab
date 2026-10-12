@@ -4,6 +4,7 @@
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -86,13 +87,47 @@ function send(res, status, body, origin) {
   res.end(payload);
 }
 
+// 知识库的收件目录。文件名由这边生成，绝不采用请求里的路径 —— 这个端口虽然
+// 只听 127.0.0.1，但毕竟是浏览器页面能直接调的，不能让它决定写到哪。
+const KB_INGEST_DIR =
+  process.env.KB_INGEST_DIR || join(homedir(), 'kb', 'to-ingest');
+
+function renderIngestMarkdown(items) {
+  const today = new Date().toISOString().slice(0, 10);
+  const groups = new Map();
+  for (const item of items) {
+    const kind = String(item.kind || 'other');
+    const list = groups.get(kind);
+    list ? list.push(item) : groups.set(kind, [item]);
+  }
+  let md = `# Stale readings from saved tabs\n\nSurfaced from the NiceTab library on ${today}.\n`;
+  for (const [kind, list] of groups) {
+    md += `\n## ${kind} (${list.length})\n\n`;
+    for (const item of list) {
+      md += `- [${String(item.title || item.url).replace(/[\[\]]/g, '')}](${item.url})\n`;
+      const note = [item.saved && `saved ${item.saved}`, item.why].filter(Boolean).join(' — ');
+      if (note) md += `  - ${note}\n`;
+    }
+  }
+  return `${md}\n---\n\n${items.length} items total.\n`;
+}
+
+async function writeIngestFile(items) {
+  await mkdir(KB_INGEST_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const file = join(KB_INGEST_DIR, `tabs-${stamp}.md`);
+  await writeFile(file, renderIngestMarkdown(items), 'utf8');
+  return file;
+}
+
 const server = createServer((req, res) => {
   const origin = req.headers.origin;
 
   if (req.method === 'OPTIONS') return send(res, 204, {}, origin);
   if (req.url === '/health') return send(res, 200, { ok: true, bin: CLAUDE_BIN }, origin);
 
-  if (req.method !== 'POST' || req.url !== '/classify') {
+  const route = req.method === 'POST' ? req.url : undefined;
+  if (route !== '/classify' && route !== '/kb-ingest') {
     return send(res, 404, { error: 'not found' }, origin);
   }
   if (!allowedOrigin(origin)) {
@@ -106,7 +141,16 @@ const server = createServer((req, res) => {
   });
   req.on('end', async () => {
     try {
-      const { system, prompt } = JSON.parse(raw);
+      const body = JSON.parse(raw);
+      if (route === '/kb-ingest') {
+        const items = Array.isArray(body.items) ? body.items : [];
+        if (!items.length) throw new Error('items is required');
+        if (items.some(item => !item?.url)) throw new Error('every item needs a url');
+        const file = await writeIngestFile(items);
+        console.log(`[bridge] kb-ingest · ${items.length} items -> ${file}`);
+        return send(res, 200, { file, count: items.length }, origin);
+      }
+      const { system, prompt } = body;
       if (!system || !prompt) throw new Error('system and prompt are required');
       const out = await runClaude(system, prompt);
       console.log(`[bridge] ok · $${(out.costUsd ?? 0).toFixed(4)}`);
