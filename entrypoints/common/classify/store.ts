@@ -1,4 +1,4 @@
-// 标签页自动分类 - 本地存储（分类结果缓存 + API Key）
+// 标签页自动分类 - 本地存储（分类结果缓存 + 桥接地址）
 import { UNCLASSIFIED_ID } from './taxonomy';
 
 export interface ClassifyRecord {

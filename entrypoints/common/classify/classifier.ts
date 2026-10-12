@@ -70,13 +70,17 @@ function chunk<T>(list: T[], size: number): T[][] {
   return out;
 }
 
-async function callBridge(bridgeUrl: string, prompt: string): Promise<string> {
+export async function callBridge(
+  bridgeUrl: string,
+  prompt: string,
+  system: string = SYSTEM_PROMPT,
+): Promise<string> {
   let response: Response;
   try {
     response = await fetch(`${bridgeUrl.replace(/\/$/, '')}/classify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ system: SYSTEM_PROMPT, prompt }),
+      body: JSON.stringify({ system, prompt }),
     });
   } catch {
     // 连不上通常是桥接服务没启动
@@ -88,7 +92,7 @@ async function callBridge(bridgeUrl: string, prompt: string): Promise<string> {
 }
 
 // 模型偶尔会带上 markdown 围栏，取出其中的 JSON
-function extractJson(text: string): string {
+export function extractJson(text: string): string {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const body = fenced ? fenced[1] : text;
   const start = body.indexOf('{');
