@@ -20,12 +20,14 @@ function resolveClaudeBin() {
 }
 
 const CLAUDE_BIN = resolveClaudeBin();
+// 分类用的模型，可用 CLASSIFY_MODEL 覆盖
+const MODEL = process.env.CLASSIFY_MODEL || 'claude-sonnet-5-5';
 
 // Claude Code 默认会加载大量工具定义，这里尽量裁剪掉以降低开销
 const BASE_ARGS = [
   '-p',
   '--model',
-  'sonnet',
+  MODEL,
   '--output-format',
   'json',
   '--exclude-dynamic-system-prompt-sections',
@@ -117,5 +119,6 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`[bridge] listening on http://${HOST}:${PORT} using ${CLAUDE_BIN}`);
+  console.log(`[bridge] listening on http://${HOST}:${PORT}`);
+  console.log(`[bridge] ${CLAUDE_BIN} · model ${MODEL}`);
 });

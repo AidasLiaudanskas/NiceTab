@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent for the NiceTab classify bridge (macOS). Keeps the bridge up
+  across reboots and restarts it if it dies, so the dashboard (which is the
+  new tab page) never nags about an unreachable bridge.
+
+  Install:
+    cp scripts/tabbridge.plist.example ~/Library/LaunchAgents/com.tabbridge.plist
+    # edit the node path / repo path below if yours differ
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tabbridge.plist
+
+  Uninstall:
+    launchctl bootout gui/$(id -u)/com.tabbridge
+    rm ~/Library/LaunchAgents/com.tabbridge.plist
+
+  Override the model by adding it to EnvironmentVariables below, e.g.
+  CLASSIFY_MODEL=claude-haiku-5-5.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tabbridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/node</string>
+        <string>/Users/aidas/Coding/NiceTab/scripts/classify-bridge.mjs</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/aidas/Coding/NiceTab</string>
+    <key>StandardOutPath</key>
+    <string>/tmp/tabbridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/tabbridge.log</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- don't respawn in a tight loop if it fails to bind -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
