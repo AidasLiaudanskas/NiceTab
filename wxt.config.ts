@@ -19,6 +19,9 @@ export default defineConfig({
   }),
   manifest: {
     name: 'Nice Tab Manager',
+    // package.json 里的描述是中英双语的，这里覆盖成纯英文
+    description:
+      'Tab manager with an auto-classifying new tab dashboard. Fork of NiceTab.',
     permissions: [
       'storage',
       'tabs',
